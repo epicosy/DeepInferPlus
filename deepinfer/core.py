@@ -2,65 +2,68 @@ import keras
 import numpy as np
 import pandas as pd
 
+PREDICTION_INTERVALS = [0.95]
+CONDITIONS = ['>=', '<=', '>', '<', '==', '!=']
+
+
+def log(weights: list, biases: list, gammas: list, activation_functions: list):
+    print(f"#weights: {len(weights)} | #biases: {len(biases)} | #N: {len(activation_functions)} | #Gamma: {len(gammas)}")
+
+    for i in range(len(weights)):
+        print("W_", i + 1, ":", weights[i])
+
+    for i in range(len(biases)):
+        print("B_", i + 1, ":", biases[i])
+
+    for i in range(len(activation_functions)):
+        print("Activation function of layer_a", i + 1, ":", activation_functions[i])
+
+    for i in range(len(gammas)):
+        print("Gamma_", i + 1, ":", gammas[i])
+
 
 def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
-    n = [0.95]
-    cond = ['>=', '<=', '>', '<', '==', '!=']
     num_model_layers = len(model.layers)
     Q = []  # postconditions
 
     print(f"Number of model's layers: {num_model_layers}")
 
-    # Getting Weights and Biases for each layer and Compute Fiction variable \gamma
-    w = np.array([])
-    Weight = []  # Storing Weights
-    Bias = []  # Storing Biases
-    Gamma = []  # Storing Weights
-    N = []  # Activation function list
-    Gamma_tr = []
+    # Getting Weights and Biases for each layer and Compute Function variable \gamma
+    weight_matrix = np.array([])
+    weights = []  # Storing weight matrices
+    biases = []  # Storing Biases
+    gammas = []  # inverse functions (γ) of layer’s weight matrix
+    activation_functions = []  # Activation function list
+    Gamma_tr = []  # inverse functions (γ) of layer’s weight matrix
     X = []
     # if 'dense' in layer.name or 'Dense' in str(model.layers[i]):
     #    print("For dense based network")
 
     for i in range(0, num_model_layers):
         print(i)
-        w = model.layers[i].get_weights()[0]
-        Weight.append(w)
+        weight_matrix = model.layers[i].get_weights()[0]
+        weights.append(weight_matrix)
         b = model.layers[i].get_weights()[1]
-        Bias.append(b)
+        biases.append(b)
         a = model.layers[i].get_config()['activation']
-        N.append(a)
-        w_tr = np.transpose(w)
+        activation_functions.append(a)
+        w_tr = np.transpose(weight_matrix)
         # print(f'Array:\n{w}')
         # print(f'Transposed Array:\n{w_tr}')
-        A = np.matmul(w, w_tr)
+        A = np.matmul(weight_matrix, w_tr)
         A_inv = np.linalg.inv(A)
-        B = np.matmul(w_tr, A_inv)
-        Gamma.append(B)
-        B_tr = np.transpose(B)
-        Gamma_tr.append(B_tr)
+        gamma = np.matmul(w_tr, A_inv)
+        gammas.append(gamma)
+        gamma_transpose = np.transpose(gamma)
+        Gamma_tr.append(gamma_transpose)
 
-    print(len(Weight))
-    print(len(Bias))
-    print(len(N))
-    print(len(Gamma))
-    for i in range(len(Weight)):
-        print("W_", i + 1, ":", Weight[i])
-
-    for i in range(len(Bias)):
-        print("B_", i + 1, ":", Bias[i])
-
-    for i in range(len(N)):
-        print("Activation function of layer_a", i + 1, ":", N[i])
-
-    for i in range(len(Gamma)):
-        print("Gamma_", i + 1, ":", Gamma[i])
+    log(weights, biases, gammas, activation_functions)
 
     for i in range(num_model_layers):
-        for j in range(len(n)):
-            for k in range(len(cond)):
-                M = np.matmul((Gamma_tr[i] * n[j]), -(Bias[i]))
-                print("X_", i + 1, "postcondition:", cond[k], n[j])
+        for j in range(len(PREDICTION_INTERVALS)):
+            for k in range(len(CONDITIONS)):
+                M = np.matmul((Gamma_tr[i] * PREDICTION_INTERVALS[j]), - (biases[i]))
+                print("X_", i + 1, "postcondition:", CONDITIONS[k], PREDICTION_INTERVALS[j])
                 print(M)
 
     def beta(N, Q, l, i):
@@ -70,30 +73,30 @@ def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
         N0 = N[0]
         if l == 1:
             if N0 == 'linear':
-                M = np.matmul((Gamma_tr[i] * Q), -(Bias[i]))
-                print("X_", i + 1, "postcondition:", cond[0], Q)
+                M = np.matmul((Gamma_tr[i] * Q), - (biases[i]))
+                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
                 print(M)
 
             if N0 == 'relu':
                 try:
-                    M1 = np.matmul((Gamma_tr[i] * Q), -(Bias[i]))
+                    M1 = np.matmul((Gamma_tr[i] * Q), - (biases[i]))
                 except ValueError:
                     pass
-                M2 = np.matmul(Gamma_tr[i], -(Bias[i]))
-                print("X_", i + 1, "postcondition:", cond[0], Q)
+                M2 = np.matmul(Gamma_tr[i], - (biases[i]))
+                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
                 # print(M1)
                 print(M2)
                 M = M2
 
             if N0 == 'sigmoid':
-                M = np.matmul((Gamma_tr[i] * np.log(Q / (1 - Q))), -(Bias[i]))
-                print("X_", i + 1, "postcondition:", cond[0], Q)
+                M = np.matmul((Gamma_tr[i] * np.log(Q / (1 - Q))), - (biases[i]))
+                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
                 print(M)
 
             if N0 == 'tanh':
                 n_tanh = abs((Q - 1) / (Q + 1))
-                M = np.matmul((Gamma_tr[i] * (0.5 * np.log(n_tanh))), -(Bias[i]))
-                print("X_", i + 1, "postcondition:", cond[0], Q)
+                M = np.matmul((Gamma_tr[i] * (0.5 * np.log(n_tanh))), - (biases[i]))
+                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
                 print(M)
 
             return M
@@ -120,12 +123,12 @@ def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
             return Q
 
     # TODO: check this; changed it to the first value in the precondition list, since the list is one element long
-    Q = n[0]
+    Q = PREDICTION_INTERVALS[0]
     print(Q)
     # l=2
     i = num_model_layers - 1
 
-    wp = beta(N, Q, num_model_layers, i)
+    wp = beta(activation_functions, Q, num_model_layers, i)
 
     # TODO: check this if is correct, as it omits the last feature (original code does this too)
     features = dataset.columns.to_numpy()[:-1]
