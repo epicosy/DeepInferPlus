@@ -137,11 +137,10 @@ def compute_precondition(activation_functions: list, post_condition: Union[float
         return post_condition
 
 
-def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
+def infer_data_precondition(model: keras.Model) -> np.ndarray:
     """
     This function computes the weakest precondition of a model given a test dataset.
     :param model: a Keras model
-    :param dataset: a test dataset
     :return:
     """
     weights, biases, gammas, activation_functions, inverse_functions, n_layers = get_abstract_representation(model)
@@ -153,35 +152,36 @@ def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
     print(post_conditions)
 
     # start with the last layer
-    wp = compute_precondition(activation_functions, post_conditions, n_layers=n_layers, i=n_layers - 1,
-                              inverse_functions=inverse_functions, biases=biases)
+    return compute_precondition(activation_functions, post_conditions, n_layers=n_layers,
+                                i=n_layers - 1, inverse_functions=inverse_functions, biases=biases)
+
+
+def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd.DataFrame) -> dict:
     # TODO: check this if is correct, as it omits the last feature (original code does this too)
     features = dataset.columns.to_numpy()[:-1]
 
-    print(f"wp: {wp}")
-    print('Numpy Array: ', features)
-    print('feature length: ', features.size)
-    print('WP size ', wp.size)
+    print(f"Weakest precondition: {weakest_precondition}")
+    print('Features: ', features)
+    print('Features length: ', features.size)
+    print('Weakest precondition size ', weakest_precondition.size)
 
-    if wp.size == features.size:
+    if weakest_precondition.size == features.size:
+        # TODO: what does this mean?
         print("True")
-        WPdictionary = dict(zip(features, wp))
-        print(WPdictionary)
-        for key, value in WPdictionary.items():
-            print(key)
-            # print(key, '>', "{0:.2f}".format(value))
-    else:
-        # print(WP_values)
-        feature_counter = 1
-        feature_count = np.array([])
-        for i in wp:
-            print("feature_counter", feature_counter, '>=', "{0:.2f}".format(i))
-            feature_count = np.append(feature_count, feature_counter)
-            feature_counter = feature_counter + 1
-        WPdictionary = dict(zip(feature_count, wp))
-        print(WPdictionary)
+        weakest_precondition_dict = dict(zip(features, weakest_precondition))
 
-    for key, value in WPdictionary.items():
+        for key, value in weakest_precondition_dict.items():
+            print(key)
+    else:
+        feature_count = np.array([])
+
+        for i, wp in enumerate(weakest_precondition, start=1):
+            print("feature_counter", i, '>=', "{0:.2f}".format(wp))
+            feature_count = np.append(feature_count, i)
+
+        weakest_precondition_dict = dict(zip(feature_count, weakest_precondition))
+
+    for key, value in weakest_precondition_dict.items():
         print(key, '>=', value)
 
-    return WPdictionary
+    return weakest_precondition_dict

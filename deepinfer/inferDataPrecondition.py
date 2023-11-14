@@ -1,7 +1,7 @@
 import argparse
 
 from deepinfer.utils.misc import get_model, get_dataset
-from deepinfer.core import infer_data_precondition
+from deepinfer.core import infer_data_precondition, match_features_to_precondition
 
 
 if __name__ == '__main__':
@@ -16,4 +16,7 @@ if __name__ == '__main__':
     model = get_model(model=args.model, version=args.version)
     dataset = get_dataset(dataset=args.dataset, split='val')
 
-    infer_data_precondition(model, dataset)
+    wp = infer_data_precondition(model)
+    wp_dict = match_features_to_precondition(wp, dataset)
+
+    print(wp_dict)
