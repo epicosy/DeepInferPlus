@@ -2,10 +2,12 @@ import keras
 import numpy as np
 import pandas as pd
 
+from typing import Union
 from keras.src.engine.base_layer import Layer
 
 
 PREDICTION_INTERVALS = [0.95]
+# Binary comparison operators
 CONDITIONS = ['>=', '<=', '>', '<', '==', '!=']
 
 
@@ -43,7 +45,7 @@ def get_abstract_representation(model: keras.Model):
 
     print(f"Number of layers in the model: {model_size}")
 
-    weights, biases, gammas, activation_functions, inverse_functions = zip(
+    inverse_functions, gammas, weights, biases, activation_functions = zip(
         *[
             get_layer_representation(model.layers[i])
             for i in range(model_size)
@@ -53,7 +55,7 @@ def get_abstract_representation(model: keras.Model):
     return list(weights), list(biases), list(gammas), list(activation_functions), list(inverse_functions), model_size
 
 
-def log(weights: list, biases: list, gammas: list, activation_functions: list):
+def log_representation(weights: list, biases: list, gammas: list, activation_functions: list):
     print(f"#weights: {len(weights)} | #biases: {len(biases)} | #N: {len(activation_functions)} | #Gamma: {len(gammas)}")
 
     for i in range(len(weights)):
@@ -69,88 +71,94 @@ def log(weights: list, biases: list, gammas: list, activation_functions: list):
         print("Gamma_", i + 1, ":", gammas[i])
 
 
-def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
-    Q = []  # postconditions
-
-    weights, biases, gammas, activation_functions, inverse_functions, model_size = get_abstract_representation(model)
-    log(weights, biases, gammas, activation_functions)
-
+# TODO: check name of the function and add docstrings
+def log_post_conditions(model_size: int, inverse_functions: list, biases: list):
     for i in range(model_size):
         for j in range(len(PREDICTION_INTERVALS)):
             for k in range(len(CONDITIONS)):
+                # TODO: find what the variable M means
                 M = np.matmul((inverse_functions[i] * PREDICTION_INTERVALS[j]), - (biases[i]))
                 print("X_", i + 1, "postcondition:", CONDITIONS[k], PREDICTION_INTERVALS[j])
                 print(M)
 
-    def beta(N, Q, l, i):
-        """This is a recursive function
-        to find the wp of N"""
-        p = 0
-        N0 = N[0]
-        if l == 1:
-            if N0 == 'linear':
-                M = np.matmul((inverse_functions[i] * Q), - (biases[i]))
-                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
-                print(M)
 
-            if N0 == 'relu':
-                try:
-                    M1 = np.matmul((inverse_functions[i] * Q), - (biases[i]))
-                except ValueError:
-                    pass
-                M2 = np.matmul(inverse_functions[i], - (biases[i]))
-                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
-                # print(M1)
-                print(M2)
-                M = M2
+def compute_precondition(activation_functions: list, post_condition: Union[float, np.array], n_layers: int, i: int,
+                         inverse_functions: list, biases: list) -> np.ndarray:
+    """This is a recursive function to find the wp of N
+    :param activation_functions: list of activation functions for each layer.
+    :param post_condition: the post_condition of the model
+    :param n_layers: number of layers
+    :param i: index of the layer
+    :param inverse_functions: list of inverse gamma matrices for each layer.
+    :param biases: list of bias vectors for each layer.
+    :return: (np.ndarray): precondition
+    """
 
-            if N0 == 'sigmoid':
-                M = np.matmul((inverse_functions[i] * np.log(Q / (1 - Q))), - (biases[i]))
-                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
-                print(M)
+    if n_layers == 1:
+        if activation_functions[0] == 'linear':
+            M = np.matmul((inverse_functions[i] * post_condition), - (biases[i]))
 
-            if N0 == 'tanh':
-                n_tanh = abs((Q - 1) / (Q + 1))
-                M = np.matmul((inverse_functions[i] * (0.5 * np.log(n_tanh))), - (biases[i]))
-                print("X_", i + 1, "postcondition:", CONDITIONS[0], Q)
-                print(M)
+        if activation_functions[0] == 'relu':
+            try:
+                # TODO: check if this is dead code
+                M1 = np.matmul((inverse_functions[i] * post_condition), - (biases[i]))
+            except ValueError:
+                pass
+            # TODO: why is this not using the value of M1?
+            M = np.matmul(inverse_functions[i], - (biases[i]))
 
-            return M
+        if activation_functions[0] == 'sigmoid':
+            M = np.matmul((inverse_functions[i] * np.log(post_condition / (1 - post_condition))), - (biases[i]))
 
-        else:
-            N0 = [N[0]]
-            N1 = N[1:]
-            # N0 = [N[:-1]]
-            # N1 = N[-1:]
-            l = len(N1)
-            wp2 = beta(N1, Q, l, i)
+        if activation_functions[0] == 'tanh':
+            n_tanh = abs((post_condition - 1) / (post_condition + 1))
+            M = np.matmul((inverse_functions[i] * (0.5 * np.log(n_tanh))), - (biases[i]))
+
+        # TODO: add cases for other activation functions
+        print("X_", i + 1, "postcondition:", CONDITIONS[0], post_condition)
+        print(M)
+
+        return M
+
+    else:
+        # pass the activation function from all layers except for the first
+        wp2 = compute_precondition(activation_functions[1:], post_condition, len(activation_functions) - 1, i,
+                                   inverse_functions, biases)
+        i = i - 1
+        post_condition = wp2
+
+        while i >= 0:
+            # pass the activation function from the first layer
+            wp1 = compute_precondition([activation_functions[0]], post_condition, 1, i,
+                                       inverse_functions, biases)
             i = i - 1
-            Q = wp2
-            # N2 = N0
-            # l = len(N2)
-            # wp1 = beta(N0,wp2,1,i)
-            # #wp = beta(N0,beta(N1,Q,l),1)
-            # i = i - 1
-            # wp0 = beta(N0,wp1,1,i)
-            while (i >= 0):
-                wp1 = beta(N0, Q, 1, i)
-                i = i - 1
-                Q = wp1
-            return Q
+            # TODO: check if this is correct as previously it was overwriting variable from outer scope (Q)
+            post_condition = wp1
+        return post_condition
 
-    # TODO: check this; changed it to the first value in the precondition list, since the list is one element long
-    Q = PREDICTION_INTERVALS[0]
-    print(Q)
-    # l=2
-    i = model_size - 1
 
-    wp = beta(activation_functions, Q, model_size, i)
+def infer_data_precondition(model: keras.Model, dataset: pd.DataFrame) -> dict:
+    """
+    This function computes the weakest precondition of a model given a test dataset.
+    :param model: a Keras model
+    :param dataset: a test dataset
+    :return:
+    """
+    weights, biases, gammas, activation_functions, inverse_functions, n_layers = get_abstract_representation(model)
+    log_representation(weights, biases, gammas, activation_functions)
+    log_post_conditions(n_layers, inverse_functions, biases)
 
+    # TODO: check this; changed it to the first value in the PREDICTION_INTERVALS, since the list is one element long
+    post_conditions = PREDICTION_INTERVALS[0]
+    print(post_conditions)
+
+    # start with the last layer
+    wp = compute_precondition(activation_functions, post_conditions, n_layers=n_layers, i=n_layers - 1,
+                              inverse_functions=inverse_functions, biases=biases)
     # TODO: check this if is correct, as it omits the last feature (original code does this too)
     features = dataset.columns.to_numpy()[:-1]
 
-    print("wp: ")
-    print(wp)
+    print(f"wp: {wp}")
     print('Numpy Array: ', features)
     print('feature length: ', features.size)
     print('WP size ', wp.size)
