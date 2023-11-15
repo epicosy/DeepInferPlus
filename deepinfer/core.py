@@ -158,6 +158,8 @@ def infer_data_precondition(model: keras.Model) -> np.ndarray:
 
 def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd.DataFrame) -> dict:
     # TODO: check this if is correct, as it omits the last feature (original code does this too)
+    # Is correct for Unseen set but incorrect for Test set, since it leaves out the last
+    # feature (which is the label for unseen)
     features = dataset.columns.to_numpy()[:-1]
 
     print(f"Weakest precondition: {weakest_precondition}")
@@ -185,3 +187,143 @@ def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd
         print(key, '>=', value)
 
     return weakest_precondition_dict
+
+
+def unseen_prediction(model: keras.Model, dataset: pd.DataFrame):
+    wp = infer_data_precondition(model)
+    wp_dict = match_features_to_precondition(wp, dataset)
+
+    print(dataset.values)
+
+    X = dataset.iloc[:,:-1]
+    y = dataset.iloc[:,:1]
+    rslt_df = dataset
+
+    #drop last column
+    # rslt_df = rslt_df.iloc[:,:-1]
+
+    ActualOutcome = dataset[dataset.columns[-1]]
+
+    for key, value in wp_dict.items():
+        print(key, '->', value)
+        rslt_df[key] = rslt_df[key].map(lambda x: "Y" if x >= value else "N")
+         #print(key, '->', value)
+        print(rslt_df)
+        #print(rslt_df.key.str.count("Y").sum())
+
+
+    WP_df = rslt_df.iloc[:,:-1]
+
+    WP_violation_count =WP_df.apply(lambda x: x.str.contains("N")).sum()
+
+    WP_satisfied_count =WP_df.apply(lambda x: x.str.contains("Y")).sum()
+
+    WP_df['total_Sat'] = 0
+
+    print(WP_df)
+    for key, value in wp_dict.items():
+        print(key, '->', value)
+        WP_df['total_Sat'] = WP_df['total_Sat']+ WP_df[key].str.contains('Y', regex=False).astype(int)
+        print(WP_df)
+
+    WP_df['total_Viol'] = 0
+    for key, value in wp_dict.items():
+        print(key, '->', value)
+        WP_df['total_Viol'] = WP_df['total_Viol']+ WP_df[key].str.contains('N', regex=False).astype(int)
+        print(WP_df)
+
+
+    violationMean= WP_df['total_Viol'].mean()
+
+    print(violationMean)
+
+    satisfiedMean = WP_df['total_Sat'].mean()
+
+    print(satisfiedMean)
+
+    #Check important features
+    print("WP_violation_count")
+    print(WP_violation_count)
+    print("WP_satisfied_count")
+    print(WP_satisfied_count)
+
+    #important feature detection
+    important_features = []
+    unimportant_featues = []
+    print(WP_violation_count.mean())
+    print(WP_satisfied_count.mean())
+
+    for i, v in WP_violation_count.items():
+        #print('index: ', i, 'value: ', v)
+        if (v <= WP_violation_count.mean()):
+        #if (v <= violationMean):
+            print('index: ', i, 'value: ', v)
+            important_features.append(str(i))
+        else:
+            unimportant_featues.append(str(i))
+    #WP_df["DeepInfer_Implication"] = WP_df.apply(lambda x: "Wrong" if (x['total_Viol'] <= violationMean) else "Correct", axis=1)
+    print("More_Important_features: ")
+    print(important_features)
+    print("Less_Important_features: ")
+    print(unimportant_featues)
+    # important_features = ['Glucose', 'Age' ,'BMI', 'BloodPressure']
+    # unimportant_featues = ['Pregnancies','SkinThickness','Insulin','DiabetesPedigreeFunction']
+    WP_df["vCount_MoreImpFeat"] = 0
+    WP_df["vCount_LessImpFeat"] = 0
+    for i in  important_features:
+        WP_df["vCount_MoreImpFeat"] = WP_df["vCount_MoreImpFeat"]+ WP_df[i].str.contains('N', regex=False).astype(int)
+    for i in  unimportant_featues:
+        WP_df["vCount_LessImpFeat"] = WP_df["vCount_LessImpFeat"]+ WP_df[i].str.contains('N', regex=False).astype(int)
+
+    print(WP_df)
+    WP_df["DeepInfer_Implication"] = WP_df.apply(lambda x: "Correct" if (x['vCount_MoreImpFeat'] == 0) else "Uncertain", axis=1)
+    WP_df["DeepInfer_Implication"] = WP_df.apply(lambda x: "Wrong" if (x['vCount_LessImpFeat'] > violationMean or x['vCount_MoreImpFeat'] < violationMean  or x['vCount_LessImpFeat'] != x['vCount_MoreImpFeat']) else "Correct", axis=1)
+    WP_df["DeepInfer_Implication"] = WP_df.apply(lambda x: "Uncertain" if (x['vCount_LessImpFeat'] == x['vCount_MoreImpFeat'] or x['vCount_LessImpFeat'] == violationMean and x['vCount_MoreImpFeat'] != 0) else x["DeepInfer_Implication"], axis=1)
+
+
+    #Appending ActualOutcome Column
+    print(ActualOutcome)
+    WP_df['Actual_Outcome'] = ActualOutcome
+    print(WP_df)
+
+    #For PIMA, DIABETES
+    predictionvalue = (model.predict(X) > 0.5).astype(int)
+
+
+    #predictionvalue
+    WP_df['Predicted_Outcome'] = predictionvalue
+    print(WP_df)
+
+
+    #WP_df["GroundTruth"] = WP_df[key].map(lambda x: "Y" if x >= value else "N")
+
+    WP_df["GroundTruth"] = WP_df.apply(lambda x: "Correct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "Wrong", axis=1)
+
+    print(WP_df)
+    #WP_df["FalsePositive"] = WP_df.apply(lambda x: "TP" if (x['GroundTruth'] == x['DeepInfer_Implication']) else "FP", axis=1)
+    WP_df["TruePositive"] = WP_df.apply(lambda x: "TP" if (x['GroundTruth'] == 'Correct' and x['DeepInfer_Implication'] == 'Correct') else "Not", axis=1)
+    #
+    #WP_df["TruePositive"] = WP_df.apply(lambda x: "TP" if (x['GroundTruth'] == x['DeepInfer_Implication']) else "FP", axis=1)
+    WP_df["FalsePositive"] = WP_df.apply(lambda x: "FP" if (x['DeepInfer_Implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
+
+    WP_df["TrueNegative"] = WP_df.apply(lambda x: "TN" if (x['GroundTruth'] == 'Wrong' and x['DeepInfer_Implication'] == 'Wrong') else "Not", axis=1)
+
+    WP_df["FalseNegative"] = WP_df.apply(lambda x: "FN" if (x['GroundTruth'] == 'Correct' and x['DeepInfer_Implication'] == 'Wrong') else "Not", axis=1)
+
+    print(WP_df)
+
+    WP_df["ActualFalsePositive"] = WP_df.apply(lambda x: "TPAct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "FPAct", axis=1)
+
+    FP_count =WP_df["FalsePositive"].str.contains('FP', regex=False).sum().astype(int)
+    TP_count =WP_df["TruePositive"].str.contains('TP', regex=False).sum().astype(int)
+    FN_count =WP_df["FalseNegative"].str.contains('FN', regex=False).sum().astype(int)
+    TN_count =WP_df["TrueNegative"].str.contains('TN', regex=False).sum().astype(int)
+    Total_GT_Correct = WP_df["GroundTruth"].str.contains('Correct', regex=False).sum().astype(int)
+    Total_GT_Wrong = WP_df["GroundTruth"].str.contains('Wrong', regex=False).sum().astype(int)
+    Total_DeepInfer_Implication_Correct = WP_df["DeepInfer_Implication"].str.contains('Correct', regex=False).sum().astype(int)
+    Total_DeepInfer_Implication_Wrong = WP_df["DeepInfer_Implication"].str.contains('Wrong', regex=False).sum().astype(int)
+    Total_DeepInfer_Implication_Uncertain = WP_df["DeepInfer_Implication"].str.contains('Uncertain', regex=False).sum().astype(int)
+    ActFP_count =WP_df["ActualFalsePositive"].str.contains('FPAct', regex=False).sum().astype(int)
+    ActTP_count =WP_df["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int)
+
+    print(WP_df)

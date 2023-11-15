@@ -2,6 +2,31 @@ import pandas as pd
 
 from deepinfer.utils.paths import models_path, datasets_path
 from tensorflow import keras
+from dataclasses import dataclass
+
+
+@dataclass
+class DatasetSplit:
+    name: str
+    file: str
+
+
+@dataclass
+class TrainSplit(DatasetSplit):
+    name: str = 'train'
+    file: str = 'x.csv'
+
+
+@dataclass
+class TestSplit(DatasetSplit):
+    name: str = 'test'
+    file: str = 'y.csv'
+
+
+@dataclass
+class UnseenSplit(DatasetSplit):
+    name: str = 'unseen'
+    file: str = 'unseen.csv'
 
 
 def get_model(model: str, version: str) -> keras.Model:
@@ -13,8 +38,8 @@ def get_model(model: str, version: str) -> keras.Model:
     return keras.models.load_model(str(model_path))
 
 
-def get_dataset(dataset: str, split: str, features: bool = True) -> pd.DataFrame:
-    dataset_path = datasets_path / dataset / split / 'x.csv' if features else 'y.csv'
+def get_dataset(dataset: str, split: DatasetSplit) -> pd.DataFrame:
+    dataset_path = datasets_path / dataset / split.name / split.file
 
     if not dataset_path.exists():
         raise ValueError(f"{dataset_path} does not exist")
