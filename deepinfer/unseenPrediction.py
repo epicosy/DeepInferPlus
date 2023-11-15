@@ -2,8 +2,8 @@ import time
 import pandas as pd
 import argparse
 
-from deepinfer.utils.misc import get_model, get_dataset, UnseenSplit
-from deepinfer.core import unseen_prediction
+from deepinfer.utils.misc import get_model, get_dataset, UnseenSplit, TestSplit
+from deepinfer.core import compute_threshold, check_prediction
 
 # TODO: check if necessary to remove the warning
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -20,10 +20,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model = get_model(model=args.model, version=args.version)
-    dataset = get_dataset(dataset=args.dataset, split=UnseenSplit())
+    dataset = get_dataset(dataset=args.dataset, split=TestSplit())
 
     time_start = time.time()
-    unseen_prediction(model, dataset)
+    threshold, wp_dict = compute_threshold(model, dataset)
+    dataset = get_dataset(dataset=args.dataset, split=UnseenSplit())
+    results = check_prediction(model, dataset, threshold, wp_dict)
     elapsed_time = time.time() - time_start
-
+    print(results)
     print(f"Elapsed Time: {elapsed_time}")

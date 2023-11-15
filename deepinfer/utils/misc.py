@@ -19,8 +19,8 @@ class TrainSplit(DatasetSplit):
 
 @dataclass
 class TestSplit(DatasetSplit):
-    name: str = 'test'
-    file: str = 'y.csv'
+    name: str = 'val'
+    file: str = 'x.csv'
 
 
 @dataclass
