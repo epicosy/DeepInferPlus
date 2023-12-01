@@ -260,14 +260,13 @@ def check_prediction(model: keras.Model, dataset: pd.DataFrame, threshold: float
     violations["implication"] = violations.apply(
         lambda x: "Correct" if (x['more_imp_feat_viol_counter'] == 0) else "Uncertain",
         axis=1)
-    violations["implication"] = violations.apply(lambda x: "Wrong" if (x['less_imp_feat_viol_counter'] > threshold or
-                                                                       x['more_imp_feat_viol_counter'] < threshold or
+    violations["implication"] = violations.apply(lambda x: "Wrong" if (x['less_imp_feat_viol_counter'] > threshold and
+                                                                       x['more_imp_feat_viol_counter'] < threshold and
                                                                        x['less_imp_feat_viol_counter'] != x[
                                                                            'more_imp_feat_viol_counter']) else "Correct",
                                                  axis=1)
     violations["implication"] = violations.apply(
-        lambda x: "Uncertain" if (x['less_imp_feat_viol_counter'] == x['more_imp_feat_viol_counter'] or
-                                  x['less_imp_feat_viol_counter'] == threshold and
+        lambda x: "Uncertain" if (x['less_imp_feat_viol_counter'] == x['more_imp_feat_viol_counter'] and
                                   x['more_imp_feat_viol_counter'] != 0) else x["implication"],
         axis=1)
 
@@ -299,7 +298,8 @@ def check_prediction(model: keras.Model, dataset: pd.DataFrame, threshold: float
                'GT_Correct': violations["GroundTruth"].str.contains('Correct', regex=False).sum().astype(int),
                'GT_Wrong': violations["GroundTruth"].str.contains('Wrong', regex=False).sum().astype(int),
                'ActFP': violations["ActualFalsePositive"].str.contains('FPAct', regex=False).sum().astype(int),
-               'ActTP': violations["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int)
+               'ActTP': violations["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int),
+               'Acc': len(violations[violations["Predicted_Outcome"] == violations['Actual_Outcome']]) / len(violations),
                }
 
     results.update({f"#{k}": v for k, v in violations["implication"].value_counts().to_dict().items()})
