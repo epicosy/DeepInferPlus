@@ -20,7 +20,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     model = get_model(model=args.model, version=args.version)
-    dataset = get_dataset(dataset=args.dataset, split=TestSplit())
+    dataset = get_dataset(dataset=args.dataset, split=UnseenSplit())
 
     time_start = time.time()
     threshold, wp_dict = compute_threshold(model, dataset)
@@ -28,4 +28,6 @@ if __name__ == '__main__':
     results = check_prediction(model, dataset, threshold, wp_dict)
     elapsed_time = time.time() - time_start
     print(results)
+    pd.DataFrame([results]).to_csv(f'./results/{args.model}{args.version}.csv', index=False)
+
     print(f"Elapsed Time: {elapsed_time}")

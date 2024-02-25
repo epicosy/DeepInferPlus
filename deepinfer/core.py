@@ -177,12 +177,13 @@ def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd
             print(key)
     else:
         feature_count = np.array([])
+        weakest_precondition_dict = dict(zip(features[:-1], weakest_precondition))
 
-        for i, wp in enumerate(weakest_precondition, start=1):
-            print("feature_counter", i, condition, "{0:.2f}".format(wp))
-            feature_count = np.append(feature_count, i)
+        #for i, wp in enumerate(weakest_precondition, start=1):
+        #    print("feature_counter", i, condition, "{0:.2f}".format(wp))
+        #    feature_count = np.append(feature_count, i)
 
-        weakest_precondition_dict = dict(zip(feature_count, weakest_precondition))
+        #weakest_precondition_dict = dict(zip(feature_count, weakest_precondition))
 
     for key, value in weakest_precondition_dict.items():
         print(key, condition, value)
@@ -205,6 +206,7 @@ def collect_feature_wise_violations(data: pd.DataFrame, weakest_preconditions: d
     results = []
 
     for feature, precondition in weakest_preconditions.items():
+        print(data.columns)
         results.append(data[feature].apply(lambda x: check_precondition_violation(x, precondition)))
 
     return pd.concat(results, axis=1)
@@ -302,6 +304,10 @@ def check_prediction(model: keras.Model, dataset: pd.DataFrame, threshold: float
                'Acc': len(violations[violations["Predicted_Outcome"] == violations['Actual_Outcome']]) / len(violations),
                }
 
+    precision = results['TP'] / (results['TP'] + results['FP'])
+    recall = results['TP'] / (results['TP'] + results['FN'])
+    f1 = 2 * (precision * recall) / (precision + recall)
+    results.update({'Precision': round(precision*100, 2), 'Recall': round(recall*100, 2), 'F1': round(f1*100, 2)})
     results.update({f"#{k}": v for k, v in violations["implication"].value_counts().to_dict().items()})
     results.update({'#Violation': violations_count.sum()})
     results.update({'#Satisfaction': violations[list(wp_dict)].eq(False).astype(int).sum().sum()})
