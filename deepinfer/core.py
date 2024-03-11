@@ -325,10 +325,10 @@ def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.Data
         'FN': violations["FalseNegative"].str.contains('FN', regex=False).sum().astype(int)
     })
 
-    fpr = results['FP'] / (results['FP'] + results['TN']) if results['FP'] + results['TN'] != 0 else 0
     tpr = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
+    fpr = results['FP'] / (results['FP'] + results['TN']) if results['FP'] + results['TN'] != 0 else 0
 
-    results.update({'FPR': round(fpr * 100, 2), 'TPR': round(tpr * 100, 2)})
+    results.update({'TPR': round(tpr * 100, 2), 'FPR': round(fpr * 100, 2)})
 
     precision = results['TP'] / (results['TP'] + results['FP']) if results['TP'] + results['FP'] != 0 else 0
     recall = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
