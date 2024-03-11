@@ -307,22 +307,47 @@ def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.Data
     violations["ActualFalsePositive"] = violations.apply(
         lambda x: "TPAct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "FPAct", axis=1)
 
-    results = {'FP': violations["FalsePositive"].str.contains('FP', regex=False).sum().astype(int),
-               'TP': violations["TruePositive"].str.contains('TP', regex=False).sum().astype(int),
-               'TN': violations["TrueNegative"].str.contains('TN', regex=False).sum().astype(int),
-               'FN': violations["FalseNegative"].str.contains('FN', regex=False).sum().astype(int),
-               'GT_Correct': violations["GroundTruth"].str.contains('Correct', regex=False).sum().astype(int),
-               'GT_Wrong': violations["GroundTruth"].str.contains('Wrong', regex=False).sum().astype(int),
-               'ActFP': violations["ActualFalsePositive"].str.contains('FPAct', regex=False).sum().astype(int),
-               'ActTP': violations["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int),
-               'Acc': len(violations[violations["Predicted_Outcome"] == violations['Actual_Outcome']]) / len(violations),
-               }
+    results = {
+        'GT_Correct': violations["GroundTruth"].str.contains('Correct', regex=False).sum().astype(int),
+        'GT_Wrong': violations["GroundTruth"].str.contains('Wrong', regex=False).sum().astype(int),
+    }
 
-    precision = results['TP'] / (results['TP'] + results['FP'])
-    recall = results['TP'] / (results['TP'] + results['FN'])
-    f1 = 2 * (precision * recall) / (precision + recall)
-    results.update({'Precision': round(precision*100, 2), 'Recall': round(recall*100, 2), 'F1': round(f1*100, 2)})
-    results.update({f"#{k}": v for k, v in violations["implication"].value_counts().to_dict().items()})
+    results.update({
+        '#Correct': violations["implication"].str.contains('Correct', regex=False).sum().astype(int),
+        '#Wrong': violations["implication"].str.contains('Wrong', regex=False).sum().astype(int),
+        '#Uncertain': violations["implication"].str.contains('Uncertain', regex=False).sum().astype(int)
+    })
+
+    results.update({
+        'TP': violations["TruePositive"].str.contains('TP', regex=False).sum().astype(int),
+        'FP': violations["FalsePositive"].str.contains('FP', regex=False).sum().astype(int),
+        'TN': violations["TrueNegative"].str.contains('TN', regex=False).sum().astype(int),
+        'FN': violations["FalseNegative"].str.contains('FN', regex=False).sum().astype(int)
+    })
+
+    fpr = results['FP'] / (results['FP'] + results['TN']) if results['FP'] + results['TN'] != 0 else 0
+    tpr = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
+
+    results.update({'FPR': round(fpr * 100, 2), 'TPR': round(tpr * 100, 2)})
+
+    precision = results['TP'] / (results['TP'] + results['FP']) if results['TP'] + results['FP'] != 0 else 0
+    recall = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if precision + recall != 0 else 0
+
+    results.update({'Precision': round(precision * 100, 2), 'Recall': round(recall * 100, 2), 'F1': round(f1 * 100, 2)})
+
+    mcc = (results['TP'] * results['TN'] - results['FP'] * results['FN']) / np.sqrt(
+        (results['TP'] + results['FP']) * (results['TP'] + results['FN']) * (results['TN'] + results['FP']) * (
+                results['TN'] + results['FN']))
+
+    results.update({'MCC': round(mcc, 3)})
+
+    results.update({
+        'ActFP': violations["ActualFalsePositive"].str.contains('FPAct', regex=False).sum().astype(int),
+        'ActTP': violations["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int),
+        'Acc': len(violations[violations["Predicted_Outcome"] == violations['Actual_Outcome']]) / len(violations)
+    })
+
     results.update({'#Violation': violations_count.sum()})
     results.update({'#Satisfaction': violations[list(wp_dict)].eq(False).astype(int).sum().sum()})
 
