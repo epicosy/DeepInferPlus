@@ -245,7 +245,8 @@ def decision_tree(x: pd.Series, threshold: float):
     # TODO: add edge case where less_imp_feat_viol_counter < threshold and threshold > more_imp_feat_viol_counter
 
 
-def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.DataFrame, threshold: float, wp_dict: dict):
+def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.DataFrame, threshold: float, wp_dict: dict,
+                     invert: bool = False) -> dict:
     violations = collect_feature_wise_violations(features, wp_dict)
     violations_count = violations[list(wp_dict)].eq(True).astype(int).sum()
 
@@ -277,17 +278,31 @@ def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.Data
     violations["GroundTruth"] = violations.apply(
         lambda x: "Correct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "Wrong", axis=1)
 
-    violations["TruePositive"] = violations.apply(
-        lambda x: "TP" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Correct') else "Not", axis=1)
+    if invert:
+        violations["TrueNegative"] = violations.apply(
+            lambda x: "TN" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Correct') else "Not", axis=1)
 
-    violations["FalsePositive"] = violations.apply(
-        lambda x: "FP" if (x['implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
+        violations["FalseNegative"] = violations.apply(
+            lambda x: "FN" if (x['implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
 
-    violations["TrueNegative"] = violations.apply(
-        lambda x: "TN" if (x['GroundTruth'] == 'Wrong' and x['implication'] == 'Wrong') else "Not", axis=1)
+        violations["TruePositive"] = violations.apply(
+            lambda x: "TP" if (x['GroundTruth'] == 'Wrong' and x['implication'] == 'Wrong') else "Not", axis=1)
 
-    violations["FalseNegative"] = violations.apply(
-        lambda x: "FN" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Wrong') else "Not", axis=1)
+        violations["FalsePositive"] = violations.apply(
+            lambda x: "FP" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Wrong') else "Not", axis=1)
+
+    else:
+        violations["TruePositive"] = violations.apply(
+            lambda x: "TP" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Correct') else "Not", axis=1)
+
+        violations["FalsePositive"] = violations.apply(
+            lambda x: "FP" if (x['implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
+
+        violations["TrueNegative"] = violations.apply(
+            lambda x: "TN" if (x['GroundTruth'] == 'Wrong' and x['implication'] == 'Wrong') else "Not", axis=1)
+
+        violations["FalseNegative"] = violations.apply(
+            lambda x: "FN" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Wrong') else "Not", axis=1)
 
     violations["ActualFalsePositive"] = violations.apply(
         lambda x: "TPAct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "FPAct", axis=1)

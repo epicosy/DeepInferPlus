@@ -1,0 +1,2 @@
+FP,TP,TN,FN,GT_Correct,GT_Wrong,ActFP,ActTP,Acc,Precision,Recall,F1,#Correct,#Wrong,#Violation,#Satisfaction
+20,4,40,13,60,17,17,60,0.7792207792207793,16.67,23.53,19.51,53,24,101,515

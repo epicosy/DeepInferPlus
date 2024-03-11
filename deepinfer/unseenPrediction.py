@@ -23,7 +23,10 @@ if __name__ == '__main__':
     parser.add_argument('--version', type=int, help='Version of the model', required=True)
     parser.add_argument('--dataset', type=str, help='Unseen validation dataset', required=True,
                         choices=dataset_choices)
+    parser.add_argument('--invert', help='Consider wrong implications as positives.', action='store_true')
     args = parser.parse_args()
+
+    output_path = f'./results/{args.model}{args.version}'
 
     model = get_model(model=args.model, version=args.version)
     dataset = load_dataset(name=args.dataset, path=datasets[args.dataset], config=DATASETS_CONFIGS[args.dataset])
@@ -31,9 +34,11 @@ if __name__ == '__main__':
     time_start = time.time()
     threshold, wp_dict = compute_threshold(model, dataset.splits['val'].features)
     results = check_prediction(model, features=dataset.splits['test'].features, labels=dataset.splits['test'].labels,
-                               threshold=threshold, wp_dict=wp_dict)
+                               threshold=threshold, wp_dict=wp_dict, invert=args.invert)
     elapsed_time = time.time() - time_start
     print(results)
-    pd.DataFrame([results]).to_csv(f'./results/{args.model}{args.version}.csv', index=False)
+
+    output_path = (output_path + '_inverted.csv') if args.invert else (output_path + '.csv')
+    pd.DataFrame([results]).to_csv(output_path, index=False)
 
     print(f"Elapsed Time: {elapsed_time}")
