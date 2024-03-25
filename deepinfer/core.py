@@ -5,7 +5,8 @@ import pandas as pd
 from typing import Union, Tuple
 from keras.src.engine.base_layer import Layer
 
-PREDICTION_INTERVALS = [0.95]
+
+PREDICTION_INTERVALS = [0.75, 0.90, 0.95, 0.99]
 # Binary comparison operators
 CONDITIONS = ['>=', '<=', '>', '<', '==', '!=']
 
@@ -115,8 +116,8 @@ def compute_precondition(activation_functions: list, post_condition: Union[float
             M = np.matmul((inverse_functions[i] * (0.5 * np.log(n_tanh))), - (biases[i]))
 
         # TODO: add cases for other activation functions
-        print("X_", i + 1, "postcondition:", CONDITIONS[0], post_condition)
-        print(M)
+        # print("X_", i + 1, "postcondition:", CONDITIONS[0], post_condition)
+        # print(M)
 
         return M
 
@@ -137,28 +138,23 @@ def compute_precondition(activation_functions: list, post_condition: Union[float
         return post_condition
 
 
-def infer_data_precondition(model: keras.Model) -> np.ndarray:
+def infer_data_precondition(model: keras.Model, prediction_interval: float) -> np.ndarray:
     """
     This function computes the weakest precondition of a model given a test dataset.
     :param model: a Keras model
+    :param prediction_interval: the prediction interval
     :return:
     """
     weights, biases, gammas, activation_functions, inverse_functions, n_layers = get_abstract_representation(model)
     log_representation(weights, biases, gammas, activation_functions)
     log_post_conditions(n_layers, inverse_functions, biases)
 
-    # TODO: check this; changed it to the first value in the PREDICTION_INTERVALS, since the list is one element long
-    post_conditions = PREDICTION_INTERVALS[0]
-    print(post_conditions)
-
     # start with the last layer
-    return compute_precondition(activation_functions, post_conditions, n_layers=n_layers,
+    return compute_precondition(activation_functions, prediction_interval, n_layers=n_layers,
                                 i=n_layers - 1, inverse_functions=inverse_functions, biases=biases)
 
 
 def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd.DataFrame) -> dict:
-    condition = CONDITIONS[0]
-    # TODO: check this if is correct, as it omits the last feature (original code does this too)
     # Is correct for Unseen set but incorrect for Test set, since it leaves out the last
     # feature (which is the label for unseen)
     features = dataset.columns.to_numpy()
@@ -175,53 +171,53 @@ def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd
         for key, value in weakest_precondition_dict.items():
             print(key)
     else:
-        feature_count = np.array([])
         weakest_precondition_dict = dict(zip(features[:-1], weakest_precondition))
 
+        # feature_count = np.array([])
         #for i, wp in enumerate(weakest_precondition, start=1):
         #    print("feature_counter", i, condition, "{0:.2f}".format(wp))
         #    feature_count = np.append(feature_count, i)
 
         #weakest_precondition_dict = dict(zip(feature_count, weakest_precondition))
 
-    for key, value in weakest_precondition_dict.items():
-        print(key, condition, value)
-
     return weakest_precondition_dict
 
 
 # TODO: change hardcoded condition, the precondition should actually be a string of the type "binary_operator value"
-def check_precondition_violation(x: pd.Series, precondition: float) -> bool:
-    return not pd.eval(f"{x} {CONDITIONS[0]} {precondition}")
+def check_precondition_violation(x: pd.Series, condition: str, precondition: float) -> bool:
+    return not pd.eval(f"{x} {condition} {precondition}")
 
 
-def collect_feature_wise_violations(data: pd.DataFrame, weakest_preconditions: dict) -> pd.DataFrame:
+def collect_feature_wise_violations(data: pd.DataFrame, weakest_preconditions: dict, condition: str) -> pd.DataFrame:
     """
     This function computes the weakest precondition violation for each feature in the dataset.
     :param data: a pandas Series with the features
     :param weakest_preconditions: a dictionary with the weakest precondition for each feature
+    :param condition: the condition
     :return:
     """
     results = []
 
     for feature, precondition in weakest_preconditions.items():
-        print(data.columns)
-        results.append(data[feature].apply(lambda x: check_precondition_violation(x, precondition)))
+        results.append(data[feature].apply(lambda x: check_precondition_violation(x, condition, precondition)))
 
     return pd.concat(results, axis=1)
 
 
-def compute_threshold(model: keras.Model, dataset: pd.DataFrame) -> Tuple[float, dict]:
+def compute_threshold(model: keras.Model, dataset: pd.DataFrame, prediction_interval: float,
+                      condition: str) -> Tuple[float, dict]:
     """
     This function computes the threshold for the weakest precondition violation.
     :param model: a Keras model
     :param dataset: the validation dataset to compute the threshold
+    :param prediction_interval: the prediction interval
+    :param condition: the condition
     :return:
     """
-    wp = infer_data_precondition(model)
+    wp = infer_data_precondition(model, prediction_interval)
     wp_dict = match_features_to_precondition(wp, dataset)
 
-    violations = collect_feature_wise_violations(dataset, wp_dict)
+    violations = collect_feature_wise_violations(dataset, wp_dict, condition=condition)
 
     return violations[list(wp_dict)].eq(True).astype(int).sum(axis='columns').mean(), wp_dict
 
@@ -245,10 +241,11 @@ def decision_tree(x: pd.Series, threshold: float):
     # TODO: add edge case where less_imp_feat_viol_counter < threshold and threshold > more_imp_feat_viol_counter
 
 
-def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.DataFrame, threshold: float, wp_dict: dict,
-                     invert: bool = False) -> dict:
-    violations = collect_feature_wise_violations(features, wp_dict)
+def check_prediction(features: pd.DataFrame, threshold: float, wp_dict: dict, condition: str) \
+        -> Tuple[pd.Series, pd.Series, pd.Series]:
+    violations = collect_feature_wise_violations(features, wp_dict, condition)
     violations_count = violations[list(wp_dict)].eq(True).astype(int).sum()
+    satisfaction_count = violations[list(wp_dict)].eq(False).astype(int).sum()
 
     important_features = [str(i) for i, v in violations_count.items() if v <= violations_count.mean()]
     unimportant_features = [str(i) for i, v in violations_count.items() if v > violations_count.mean()]
@@ -262,93 +259,16 @@ def check_prediction(model: keras.Model, features: pd.DataFrame, labels: pd.Data
     violations["implication"] = violations.apply(
         lambda x: "Correct" if (x['more_imp_feat_viol_counter'] == 0) else "Uncertain",
         axis=1)
+
     violations["implication"] = violations.apply(lambda x: "Wrong" if (x['less_imp_feat_viol_counter'] > threshold and
                                                                        x['more_imp_feat_viol_counter'] < threshold and
                                                                        x['less_imp_feat_viol_counter'] != x[
                                                                            'more_imp_feat_viol_counter']) else "Correct",
                                                  axis=1)
+
     violations["implication"] = violations.apply(
         lambda x: "Uncertain" if (x['less_imp_feat_viol_counter'] == x['more_imp_feat_viol_counter'] and
                                   x['more_imp_feat_viol_counter'] != 0) else x["implication"],
         axis=1)
 
-    violations['Predicted_Outcome'] = (model.predict(features) > 0.5).astype(int)
-    violations['Actual_Outcome'] = labels
-
-    violations["GroundTruth"] = violations.apply(
-        lambda x: "Correct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "Wrong", axis=1)
-
-    if invert:
-        violations["TrueNegative"] = violations.apply(
-            lambda x: "TN" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Correct') else "Not", axis=1)
-
-        violations["FalseNegative"] = violations.apply(
-            lambda x: "FN" if (x['implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
-
-        violations["TruePositive"] = violations.apply(
-            lambda x: "TP" if (x['GroundTruth'] == 'Wrong' and x['implication'] == 'Wrong') else "Not", axis=1)
-
-        violations["FalsePositive"] = violations.apply(
-            lambda x: "FP" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Wrong') else "Not", axis=1)
-
-    else:
-        violations["TruePositive"] = violations.apply(
-            lambda x: "TP" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Correct') else "Not", axis=1)
-
-        violations["FalsePositive"] = violations.apply(
-            lambda x: "FP" if (x['implication'] == 'Correct' and x['GroundTruth'] == 'Wrong') else "Not", axis=1)
-
-        violations["TrueNegative"] = violations.apply(
-            lambda x: "TN" if (x['GroundTruth'] == 'Wrong' and x['implication'] == 'Wrong') else "Not", axis=1)
-
-        violations["FalseNegative"] = violations.apply(
-            lambda x: "FN" if (x['GroundTruth'] == 'Correct' and x['implication'] == 'Wrong') else "Not", axis=1)
-
-    violations["ActualFalsePositive"] = violations.apply(
-        lambda x: "TPAct" if (x['Actual_Outcome'] == x['Predicted_Outcome']) else "FPAct", axis=1)
-
-    results = {
-        'GT_Correct': violations["GroundTruth"].str.contains('Correct', regex=False).sum().astype(int),
-        'GT_Wrong': violations["GroundTruth"].str.contains('Wrong', regex=False).sum().astype(int),
-    }
-
-    results.update({
-        '#Correct': violations["implication"].str.contains('Correct', regex=False).sum().astype(int),
-        '#Wrong': violations["implication"].str.contains('Wrong', regex=False).sum().astype(int),
-        '#Uncertain': violations["implication"].str.contains('Uncertain', regex=False).sum().astype(int)
-    })
-
-    results.update({
-        'TP': violations["TruePositive"].str.contains('TP', regex=False).sum().astype(int),
-        'FP': violations["FalsePositive"].str.contains('FP', regex=False).sum().astype(int),
-        'TN': violations["TrueNegative"].str.contains('TN', regex=False).sum().astype(int),
-        'FN': violations["FalseNegative"].str.contains('FN', regex=False).sum().astype(int)
-    })
-
-    tpr = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
-    fpr = results['FP'] / (results['FP'] + results['TN']) if results['FP'] + results['TN'] != 0 else 0
-
-    results.update({'TPR': round(tpr * 100, 2), 'FPR': round(fpr * 100, 2)})
-
-    precision = results['TP'] / (results['TP'] + results['FP']) if results['TP'] + results['FP'] != 0 else 0
-    recall = results['TP'] / (results['TP'] + results['FN']) if results['TP'] + results['FN'] != 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if precision + recall != 0 else 0
-
-    results.update({'Precision': round(precision * 100, 2), 'Recall': round(recall * 100, 2), 'F1': round(f1 * 100, 2)})
-
-    mcc = (results['TP'] * results['TN'] - results['FP'] * results['FN']) / np.sqrt(
-        (results['TP'] + results['FP']) * (results['TP'] + results['FN']) * (results['TN'] + results['FP']) * (
-                results['TN'] + results['FN']))
-
-    results.update({'MCC': round(mcc, 3)})
-
-    results.update({
-        'ActFP': violations["ActualFalsePositive"].str.contains('FPAct', regex=False).sum().astype(int),
-        'ActTP': violations["ActualFalsePositive"].str.contains('TPAct', regex=False).sum().astype(int),
-        'Acc': len(violations[violations["Predicted_Outcome"] == violations['Actual_Outcome']]) / len(violations)
-    })
-
-    results.update({'#Violation': violations_count.sum()})
-    results.update({'#Satisfaction': violations[list(wp_dict)].eq(False).astype(int).sum().sum()})
-
-    return results
+    return violations["implication"], violations_count, satisfaction_count
