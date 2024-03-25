@@ -1,17 +1,54 @@
-# DeepInfer
-This repository contains the reproducibility package, source code, benchmark, and results for the paper - "Inferring Data Preconditions from Deep Learning Models for Trustworthy Prediction in Deployment", which appeared in ICSE’2024: 2024 IEEE/ACM 46th International Conference on Software Engineering (ICSE ’24), April 14–20, 2024, Lisbon, Portugal.
+# DeepInferPlus
+This repository contains the implementation of DeepInfer as a standalone tool 
 
-The structure of this repository is below:
 
-## Index
-> 1. Models
-> 2. Datasets
-> 3. Source Codes
-  >> * Data precondition inference with a trained DNN model (inferDataPrecondition.py)
-  >> * Unseen data prediction with DeepInfer (unseenPrediction.py)
-  >> * Source codes of PIMA diabetes, House Price, German Credit, Bank Customer model prediction
-  >> * ReadMe file to execute codes
-> 4. Appendix with the derivation of wp rules
+## Usage
+
+To use the `deepinfer` tool, run the following command:
+
+```bash
+python3 -m deepinfer.main [-h] -m MODEL [-wd WORKDIR] [-c {>=,<=,>,<,==,!=}] {analyze,infer} ...
+```
+
+### Positional Arguments:
+
+{analyze,infer}: Choose between the analyze and infer subcommands.
+
+#### Options
+```
+-h, --help: Show the help message and exit.
+-m MODEL, --model MODEL: Path to the model.
+-wd WORKDIR, --workdir WORKDIR: Working directory.
+-c {>=,<=,>,<,==,!=}, --condition {>=,<=,>,<,==,!=}: Condition to check.
+```
+
+### Analyze Command:
+To analyze data, use the following command:
+
+```bash
+python3 -m deepinfer.main -m /path/to/model analyze [-h] -vx /path/to/val_features [-pi {0.75,0.9,0.95,0.99}]
+```
+
+#### Options
+```
+-h, --help: Show this help message and exit.
+-vx VAL_FEATURES, --val_features VAL_FEATURES: Path to the validation features.
+-pi {0.75,0.9,0.95,0.99}, --prediction_interval {0.75,0.9,0.95,0.99}: Prediction intervals.
+```
+
+### Infer Command:
+To perform inference, use the following command:
+
+```bash
+python3 -m deepinfer.main -m /path/to/model infer [-h] -tx /path/to/test_features
+```
+
+#### Options
+```
+-h, --help: Show this help message and exit.
+-tx TEST_FEATURES, --test_features TEST_FEATURES: Path to the test features.
+```
+
 
 ### Cite the paper as
 ```
