@@ -12,7 +12,7 @@ python3 -m deepinfer.main [-h] -m MODEL [-wd WORKDIR] [-c {>=,<=,>,<,==,!=}] {an
 
 ### Positional Arguments:
 
-{analyze,infer}: Choose between the analyze and infer subcommands.
+{analyze,infer}: Choose between the `analyze` and `infer` subcommands.
 
 #### Options
 ```

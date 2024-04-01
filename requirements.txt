@@ -4,4 +4,3 @@ scikit-learn==1.3.0
 scipy==1.9.3
 tensorflow==2.14.0
 keras==2.14.0
-trustbench==0.0.1
