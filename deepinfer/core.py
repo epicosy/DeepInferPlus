@@ -264,6 +264,7 @@ def get_features(model: Model, data: [pd.DataFrame, np.ndarray], output_path: Pa
             return pd.read_csv(output_path)
         else:
             outputs = temp_model.predict(data)
+            outputs = outputs[-1]
 
             dataset = pd.DataFrame(outputs, columns=[str(i) for i in range(outputs.shape[1])])
             dataset.to_csv(output_path, index=False)
