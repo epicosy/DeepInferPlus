@@ -1,9 +1,14 @@
+import sys
 import keras
 import numpy as np
 import pandas as pd
 
+from tqdm import tqdm
+from pathlib import Path
 from typing import Union, Tuple
 from keras.src.engine.base_layer import Layer
+from keras.layers import Dense, Activation
+from keras import Model
 
 
 PREDICTION_INTERVALS = [0.75, 0.90, 0.95, 0.99]
@@ -11,15 +16,33 @@ PREDICTION_INTERVALS = [0.75, 0.90, 0.95, 0.99]
 CONDITIONS = ['>=', '<=', '>', '<', '==', '!=']
 
 
-def get_layer_representation(layer: Layer):
+def get_dense_activation_pairs(layer_list):
+    pairs = []
+    num_layers = len(layer_list)
+
+    for i in range(num_layers - 1):
+        if isinstance(layer_list[i], Dense) and isinstance(layer_list[i + 1], Activation):
+            # check if activation layers are supported
+            if layer_list[i + 1].get_config()['activation'] in ['relu', 'sigmoid', 'tanh', 'linear']:
+                pairs.append((layer_list[i], layer_list[i + 1]))
+            else:
+                print(f"Activation function {layer_list[i + 1].get_config()['activation']} is not supported")
+
+    return pairs
+
+
+def get_layer_representation(layer: Layer, act_layer: Activation = None):
     """
     This function computes the inverse function (γ) of a layer’s weight matrix (W) where γ (W) ::= (Wt.W) −1
     :param layer: a layer of a model
+    :param act_layer: an activation layer
     :return: tuple: inverse function, gamma, weight matrix, bias, activation function
     """
+    print(f"Layer: {layer.name}")
     weight_matrix = layer.get_weights()[0]
     bias = layer.get_weights()[1]
-    activation_func = layer.get_config()['activation']
+    activation_func = layer.get_config()['activation'] if act_layer is None else act_layer.get_config()['activation']
+
     weight_matrix_tr = np.transpose(weight_matrix)
     symmetric_matrix = np.matmul(weight_matrix, weight_matrix_tr)
     symmetric_matrix_inverse = np.linalg.inv(symmetric_matrix)
@@ -45,12 +68,26 @@ def get_abstract_representation(model: keras.Model):
 
     print(f"Number of layers in the model: {model_size}")
 
-    inverse_functions, gammas, weights, biases, activation_functions = zip(
-        *[
-            get_layer_representation(model.layers[i])
-            for i in range(model_size)
-        ]
-    )
+    pairs = get_dense_activation_pairs(model.layers)
+
+    if pairs:
+        # add first layer to the list
+        model_size = len(pairs)
+        inverse_functions, gammas, weights, biases, activation_functions = zip(
+            *[
+                get_layer_representation(layer, act_layer)
+                for layer, act_layer in pairs
+            ]
+        )
+    else:
+        inverse_functions, gammas, weights, biases, activation_functions = zip(
+            *[
+                get_layer_representation(model.layers[i])
+                for i in range(model_size)
+            ]
+        )
+
+    print(f"Number of selected layers in the model: {model_size}")
 
     return list(weights), list(biases), list(gammas), list(activation_functions), list(inverse_functions), model_size
 
@@ -154,10 +191,13 @@ def infer_data_precondition(model: keras.Model, prediction_interval: float) -> n
                                 i=n_layers - 1, inverse_functions=inverse_functions, biases=biases)
 
 
-def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd.DataFrame) -> dict:
+def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: [pd.DataFrame, np.ndarray]) -> dict:
     # Is correct for Unseen set but incorrect for Test set, since it leaves out the last
     # feature (which is the label for unseen)
-    features = dataset.columns.to_numpy()
+    if isinstance(dataset, np.ndarray):
+        features = np.arange(weakest_precondition.shape[0]).astype(str)
+    else:
+        features = dataset.columns.to_numpy()
 
     print(f"Weakest precondition: {weakest_precondition}")
     print('Features: ', features)
@@ -168,8 +208,8 @@ def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: pd
         # TODO: what does this mean?
         weakest_precondition_dict = dict(zip(features, weakest_precondition))
 
-        for key, value in weakest_precondition_dict.items():
-            print(key)
+        #for key, value in weakest_precondition_dict.items():
+        #    print(key)
     else:
         weakest_precondition_dict = dict(zip(features[:-1], weakest_precondition))
 
@@ -188,7 +228,8 @@ def check_precondition_violation(x: pd.Series, condition: str, precondition: flo
     return not pd.eval(f"{x} {condition} {precondition}")
 
 
-def collect_feature_wise_violations(data: pd.DataFrame, weakest_preconditions: dict, condition: str) -> pd.DataFrame:
+def collect_feature_wise_violations(data: [pd.DataFrame, np.ndarray], weakest_preconditions: dict,
+                                    condition: str) -> pd.DataFrame:
     """
     This function computes the weakest precondition violation for each feature in the dataset.
     :param data: a pandas Series with the features
@@ -198,13 +239,39 @@ def collect_feature_wise_violations(data: pd.DataFrame, weakest_preconditions: d
     """
     results = []
 
-    for feature, precondition in weakest_preconditions.items():
+    for feature, precondition in tqdm(weakest_preconditions.items(), desc='Checking precondition violation',
+                                      file=sys.stdout):
         results.append(data[feature].apply(lambda x: check_precondition_violation(x, condition, precondition)))
 
     return pd.concat(results, axis=1)
 
 
-def compute_threshold(model: keras.Model, dataset: pd.DataFrame, prediction_interval: float,
+def get_features(model: Model, data: [pd.DataFrame, np.ndarray], output_path: Path) -> pd.DataFrame:
+    outputs = []
+    temp_model = None
+    i = 0
+
+    while not isinstance(model.layers[i], Dense):
+        print(model.layers[i].name)
+        outputs.append(model.layers[i].output)
+        i += 1
+
+    if outputs:
+        temp_model = Model(inputs=model.input, outputs=outputs)
+
+    if temp_model:
+        if output_path.exists():
+            return pd.read_csv(output_path)
+        else:
+            outputs = temp_model.predict(data)
+
+            dataset = pd.DataFrame(outputs, columns=[str(i) for i in range(outputs.shape[1])])
+            dataset.to_csv(output_path, index=False)
+
+        return dataset
+
+
+def compute_threshold(model: keras.Model, dataset: Union[pd.DataFrame, np.ndarray], prediction_interval: float,
                       condition: str) -> Tuple[float, dict]:
     """
     This function computes the threshold for the weakest precondition violation.
@@ -212,6 +279,7 @@ def compute_threshold(model: keras.Model, dataset: pd.DataFrame, prediction_inte
     :param dataset: the validation dataset to compute the threshold
     :param prediction_interval: the prediction interval
     :param condition: the condition
+    :param working_dir: the working directory
     :return:
     """
     wp = infer_data_precondition(model, prediction_interval)

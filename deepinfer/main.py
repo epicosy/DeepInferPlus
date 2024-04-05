@@ -1,13 +1,14 @@
 import sys
 import json
 import argparse
+import numpy as np
 import pandas as pd
 
 from pathlib import Path
 
 from deepinfer.utils.misc import get_model
 from deepinfer.utils.paths import results_path
-from deepinfer.core import compute_threshold, check_prediction, PREDICTION_INTERVALS, CONDITIONS
+from deepinfer.core import compute_threshold, check_prediction, PREDICTION_INTERVALS, CONDITIONS, get_features
 
 
 if __name__ == '__main__':
@@ -37,9 +38,28 @@ if __name__ == '__main__':
     satisfactions_path = working_dir / 'satisfactions.csv'
 
     if args.action == 'analyze':
-        val_features = pd.read_csv(args.val_features)
+        val_path = Path(args.val_features)
+
+        if not val_path.exists():
+            print(f"Could not find validation features file {val_path}", file=sys.stderr)
+            exit()
+
+        if val_path.suffix == '.npy':
+            val_features = np.load(val_path)
+
+            if len(val_features.shape) > 2:
+                test_features = get_features(model, val_features, output_path=working_dir / 'val_features.csv')
+
+        elif val_path.suffix == '.csv':
+            # TODO: add case for files with no headers
+            val_features = pd.read_csv(val_path, delimiter=',')
+        else:
+            print(f"Unsupported file format {val_path.suffix}", file=sys.stderr)
+            exit()
+
         threshold, wp_dict = compute_threshold(model, val_features, prediction_interval=args.prediction_interval,
                                                condition=args.condition)
+
         wp_dict = {k: float(v) for k, v in wp_dict.items()}
         analysis = {'threshold': float(threshold), 'wp_dict': wp_dict}
 
@@ -47,7 +67,23 @@ if __name__ == '__main__':
             json.dump(analysis, f, indent=4)
 
     elif args.action == 'infer':
-        test_features = pd.read_csv(args.test_features)
+        test_path = Path(args.test_features)
+
+        if not test_path.exists():
+            print(f"Could not find test features file {test_path}", file=sys.stderr)
+            exit()
+
+        if test_path.suffix == '.npy':
+            test_features = np.load(test_path)
+
+            if len(test_features.shape) > 2:
+                test_features = get_features(model, test_features, output_path=working_dir / 'test_features.csv')
+
+        elif test_path.suffix == '.csv':
+            test_features = pd.read_csv(test_path, delimiter=',')
+        else:
+            print(f"Unsupported file format {test_path.suffix}", file=sys.stderr)
+            exit()
 
         with analysis_path.open(mode='r') as af:
             analysis = json.load(af)
