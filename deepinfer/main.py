@@ -48,7 +48,7 @@ if __name__ == '__main__':
             val_features = np.load(val_path)
 
             if len(val_features.shape) > 2:
-                test_features = get_features(model, val_features, output_path=working_dir / 'val_features.csv')
+                val_features = get_features(model, val_features, output_path=working_dir / 'val_features.csv')
 
         elif val_path.suffix == '.csv':
             # TODO: add case for files with no headers
