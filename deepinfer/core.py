@@ -275,7 +275,7 @@ def get_features(model: Model, data: [pd.DataFrame, np.ndarray], output_path: Pa
         if output_path.exists():
             return pd.read_csv(output_path)
         else:
-            outputs = temp_model.predict(data)
+            outputs = temp_model.predict(data, batch_size=128, workers=-1, use_multiprocessing=True, verbose=1)
             outputs = outputs[-1]
 
             dataset = pd.DataFrame(outputs, columns=[str(i) for i in range(outputs.shape[1])])
@@ -292,7 +292,6 @@ def compute_threshold(model: keras.Model, dataset: Union[pd.DataFrame, np.ndarra
     :param dataset: the validation dataset to compute the threshold
     :param prediction_interval: the prediction interval
     :param condition: the condition
-    :param working_dir: the working directory
     :return:
     """
     wp = infer_data_precondition(model, prediction_interval)
