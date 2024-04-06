@@ -223,9 +223,21 @@ def match_features_to_precondition(weakest_precondition: np.ndarray, dataset: [p
     return weakest_precondition_dict
 
 
-# TODO: change hardcoded condition, the precondition should actually be a string of the type "binary_operator value"
 def check_precondition_violation(x: pd.Series, condition: str, precondition: float) -> bool:
-    return not pd.eval(f"{x} {condition} {precondition}")
+    if condition == '==':
+        return not (x == precondition)
+    elif condition == '!=':
+        return not (x != precondition)
+    elif condition == '>':
+        return not (x > precondition)
+    elif condition == '<':
+        return not (x < precondition)
+    elif condition == '>=':
+        return not (x >= precondition)
+    elif condition == '<=':
+        return not (x <= precondition)
+    else:
+        raise ValueError(f"Unsupported condition {condition}")
 
 
 def collect_feature_wise_violations(data: [pd.DataFrame, np.ndarray], weakest_preconditions: dict,
